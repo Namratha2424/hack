@@ -1,0 +1,107 @@
+import csv
+import json
+import os
+
+def run_smart_triage(input_file='Sample.csv', output_file='submission1.json'):
+    # Parse the patient input file [cite: 10, 26]
+    patients = []
+    if not os.path.exists(input_file):
+        print(f"Error: {input_file} not found.")
+        return
+
+    with open(input_file, mode='r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            patients.append({
+                "patient_id": row['patient_id'],
+                "severity": int(row['severity']),
+                "arrival_time": int(row['arrival_time']),
+                "treatment_time": int(row['treatment_time']),
+                "required_specialization": row['required_specialization']
+            })
+
+    # Sort by arrival time to begin the simulation [cite: 36, 44]
+    patients.sort(key=lambda x: x['arrival_time'])
+    
+    # Define fixed doctors [cite: 11, 18]
+    doctors = [
+        {"id": "Doctor_T", "spec": "TRAUMA", "free_at": 0},
+        {"id": "Doctor_C", "spec": "CARDIO", "free_at": 0},
+        {"id": "Doctor_G", "spec": "GENERAL", "free_at": 0}
+    ]
+    
+    waiting_pool = []
+    treatments = []
+    total_risk = 0
+    current_time = 0
+    num_patients = len(patients)
+
+    print(f"--- Starting Simulation ---")
+
+    while len(treatments) < num_patients:
+        # Move arrived patients into the waiting pool [cite: 37, 41]
+        while patients and patients[0]['arrival_time'] <= current_time:
+            waiting_pool.append(patients.pop(0))
+
+        # Sort waiting pool by severity (High to Low) to minimize risk 
+        waiting_pool.sort(key=lambda x: x['severity'], reverse=True)
+
+        assigned_any = False
+        for doc in doctors:
+            if doc['free_at'] <= current_time:
+                # Match doctor to patient based on specialization rules 
+                for i, patient in enumerate(waiting_pool):
+                    can_treat = (doc['spec'] == "GENERAL" or 
+                                 doc['spec'] == patient['required_specialization'])
+                    
+                    if can_treat:
+                        start_time = current_time
+                        end_time = start_time + patient['treatment_time']
+                        
+                        # RISK CALCULATION 
+                        wait_time = start_time - patient['arrival_time']
+                        patient_risk = patient['severity'] * wait_time
+                        total_risk += patient_risk
+                        
+                        # Output specific calculation to console
+                        print(f"Scheduled {patient['patient_id']}: Start={start_time}, Wait={wait_time}, Risk={patient_risk}")
+                        
+                        treatments.append({
+                            "patient_id": patient['patient_id'],
+                            "doctor_id": doc['id'],
+                            "start_time": start_time,
+                            "end_time": end_time
+                        })
+                        
+                        doc['free_at'] = end_time # Doctor is busy [cite: 39, 40]
+                        waiting_pool.pop(i)
+                        assigned_any = True
+                        break 
+
+        # Time advancement logic [cite: 42, 43]
+        if not assigned_any:
+            next_events = [d['free_at'] for d in doctors if d['free_at'] > current_time]
+            if patients:
+                next_events.append(patients[0]['arrival_time'])
+            
+            if next_events:
+                current_time = min(next_events)
+            else:
+                current_time += 1
+        else:
+            continue
+
+    # Final result construction [cite: 56, 57]
+    output = {
+        "treatments": sorted(treatments, key=lambda x: x['start_time']),
+        "estimated_total_risk": total_risk
+    }
+
+    with open(output_file, 'w') as f:
+        json.dump(output, f, indent=2)
+
+    print(f"--- Simulation Complete ---")
+    print(f"Final Estimated Total Risk: {total_risk}") # [cite: 49]
+
+if __name__ == "__main__":
+    run_smart_triage()
